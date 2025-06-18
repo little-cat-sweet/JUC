@@ -18,6 +18,48 @@ public class ReentrantLockExampleTwo {
     int count = 0;
     private final String[] buffer = new String[3];
 
+
+    public void put(String item) throws InterruptedException {
+        lock.lock();
+
+        try {
+            while (count == buffer.length - 1) {
+                System.out.println(getCurrentThreadName() + " buffer is full, provider wait");
+                isFull.await();
+            }
+
+            buffer[in] = item;
+            in = (in + 1) % buffer.length;
+            count++;
+
+            System.out.println(getCurrentThreadName() + " put item " + item + ", count " + count);
+            isEmpty.signal();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public String take() throws InterruptedException {
+        lock.lock();
+        try {
+            while (count == 0) {
+                System.out.println(getCurrentThreadName() + " buffer is empty, consumer wait");
+                isEmpty.await();
+            }
+
+            String item = buffer[out];
+            out = (out + 1) % buffer.length;
+            count--;
+            System.out.println(getCurrentThreadName() + "get item" + item + ", count : " + count);
+
+            isFull.signal();
+            return item;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+
     public void lockOne() {
         lock.lock();
         try {
@@ -81,29 +123,35 @@ public class ReentrantLockExampleTwo {
         }
     }
 
-    public static void main(String[] args) throws InterruptedException {
-        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
+    public void lockInterruptibly() {
+        try {
+            lock.lockInterruptibly();
 
-        logHeader("test normal lock way");
-        Thread thread1 = new Thread(reentrantLockExampleTwo::lockOne, "t1");
-        Thread thread2 = new Thread(reentrantLockExampleTwo::lockOne, "t2");
-        thread1.start();
-        thread2.start();
-        thread1.join();
-        thread2.join();
-
-        logHeader("test re in lock");
-        reentrantLockExampleTwo.reentrantFeature();
-
-        logHeader("test try lock");
-        for (int i = 0; i < 3; i++) {
-            Thread thread = new Thread(reentrantLockExampleTwo::tryGetLock, "thread" + i);
-            thread.start();
+            try {
+                System.out.println(getCurrentThreadName() + " get the interruptibly lock");
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                System.out.println(getCurrentThreadName() + " was interrupted, when it hold the interruptibly lock");
+                Thread.currentThread().interrupt();
+            } finally {
+                if (((ReentrantLock) lock).isHeldByCurrentThread()) {
+                    lock.unlock();
+                    System.out.println(getCurrentThreadName() + " released the interruptibly lock !");
+                }
+            }
+        } catch (InterruptedException e) {
+            System.out.println(getCurrentThreadName() + " was interrupted, when it gets the lock !");
+            Thread.currentThread().interrupt();
         }
+    }
 
-        Thread.sleep(4000);
+    public static void main(String[] args) throws InterruptedException {
+        testPC();
+    }
 
+    public static void testTryLockWithTime() {
         logHeader("test try lock with time");
+        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
         for (int i = 0; i < 3; i++) {
             Thread thread = new Thread(() -> {
                 try {
@@ -111,10 +159,88 @@ public class ReentrantLockExampleTwo {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-            }, "thread " + i);
+            }, "t-" + i);
             thread.start();
         }
+    }
 
+    public static void testNormalLock() throws InterruptedException {
+        logHeader("test normal lock way");
+        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
+
+        Thread thread1 = new Thread(reentrantLockExampleTwo::lockOne, "t1");
+        Thread thread2 = new Thread(reentrantLockExampleTwo::lockOne, "t2");
+        thread1.start();
+        thread2.start();
+        thread1.join();
+        thread2.join();
+    }
+
+    public static void testReInLock() {
+        logHeader("test re in lock");
+        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
+        reentrantLockExampleTwo.reentrantFeature();
+    }
+
+    public static void testTryLock() {
+        logHeader("test try lock");
+        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
+        for (int i = 0; i < 3; i++) {
+            Thread thread = new Thread(reentrantLockExampleTwo::tryGetLock, "t-" + i);
+            thread.start();
+        }
+    }
+
+
+    public static void testInterruptible() throws InterruptedException {
+
+        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
+        logHeader("test interruptibly lock");
+
+        Thread thread1 = new Thread(reentrantLockExampleTwo::lockInterruptibly, "Thread-1");
+        thread1.start();
+        Thread.sleep(100); // 确保thread1先获取到锁
+
+        // 启动线程2
+        Thread thread2 = new Thread(reentrantLockExampleTwo::lockInterruptibly, "Thread-2");
+        thread2.start();
+        Thread.sleep(100); // 让thread2进入等待锁的状态
+
+        // 中断线程2
+        System.out.println("主线程中断 Thread-2");
+        thread2.interrupt();
+    }
+
+    public static void testPC() throws InterruptedException {
+
+        logHeader("test provider and consumer");
+        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
+        Thread provider = new Thread(() -> {
+            for (int i = 0; i < 10; i++) {
+                try {
+                    reentrantLockExampleTwo.put("item-" + i);
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }, "Provider");
+
+        Thread consumer = new Thread(() -> {
+            for (int i = 0; i < 10; i++) {
+                try {
+                    reentrantLockExampleTwo.take();
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }, "Consumer");
+
+        provider.start();
+        consumer.start();
+        provider.join();
+        consumer.join();
     }
 
     private static void logHeader(String msg) {
