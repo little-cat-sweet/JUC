@@ -39,6 +39,30 @@ public class ReentrantLockExampleTwo {
         }
     }
 
+    ReentrantLock reentrantLock = new ReentrantLock(true);
+
+    public void fairLock() {
+        reentrantLock.lock();
+        try {
+            System.out.println(getCurrentThreadName() + " got the fair lock");
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            System.out.println(getCurrentThreadName() + " released the fair lock");
+            reentrantLock.unlock();
+        }
+    }
+
+    public  void lockState(){
+        lock.lock();
+        System.out.println(((ReentrantLock) lock).isLocked());
+        System.out.println("current thread hold the lock ?  " + ((ReentrantLock) lock).isHeldByCurrentThread());
+        System.out.println("is the fair lock " + ((ReentrantLock) lock).isFair());
+    }
+
+
+
     public String take() throws InterruptedException {
         lock.lock();
         try {
@@ -146,7 +170,9 @@ public class ReentrantLockExampleTwo {
     }
 
     public static void main(String[] args) throws InterruptedException {
-        testPC();
+//        testPC();
+        testFairLock();
+
     }
 
     public static void testTryLockWithTime() {
@@ -241,6 +267,15 @@ public class ReentrantLockExampleTwo {
         consumer.start();
         provider.join();
         consumer.join();
+    }
+
+    public static void testFairLock() {
+        ReentrantLockExampleTwo reentrantLockExampleTwo = new ReentrantLockExampleTwo();
+        logHeader("test fair lock");
+        for (int i = 0; i < 5; i++) {
+            Thread thread = new Thread(reentrantLockExampleTwo::fairLock, "fair - lock " + i);
+            thread.start();
+        }
     }
 
     private static void logHeader(String msg) {
